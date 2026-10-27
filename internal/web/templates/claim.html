@@ -1,0 +1,49 @@
+{{define "head"}}{{if not .Data.Claim.Ready}}<meta http-equiv="refresh" content="3">{{end}}{{end}}
+{{define "content"}}
+{{with .Data.Claim}}
+<p class="crumbs"><a href="/">Sandboxes</a> /</p>
+<div class="title-row">
+  <h1>{{.Name}}</h1>
+  <form method="post" action="/claims/{{.Name}}/release"><button class="danger">Release</button></form>
+</div>
+<dl class="facts">
+  <dt>Status</dt><dd>{{template "status" .}}{{if and (not .Ready) .Message}} <span class="muted">{{.Message}}</span>{{end}}</dd>
+  <dt>Pool</dt><dd>{{.Pool}}</dd>
+  <dt>Sandbox</dt><dd>{{or .Sandbox "not assigned yet"}}</dd>
+  <dt>Claimed</dt><dd>{{ago .Created}}</dd>
+  <dt>Expires</dt><dd>{{clock .ShutdownTime}} (in {{until .ShutdownTime}})</dd>
+</dl>
+{{end}}
+
+<section class="card">
+  <h2>Run a task</h2>
+  {{if .Data.Claim.Ready}}
+  <form method="post" action="/claims/{{.Data.Claim.Name}}/tasks">
+    <textarea name="prompt" rows="5" required placeholder="Fix the flaky test in ./pkg/retry and open a PR"></textarea>
+    <button class="primary">Run</button>
+  </form>
+  {{else}}
+  <p class="muted">You can run tasks once the sandbox is ready.</p>
+  {{end}}
+</section>
+
+<section>
+  <h2>Tasks</h2>
+  {{if .Data.Tasks}}
+  <table>
+    <thead><tr><th>Prompt</th><th>Status</th><th>Started</th></tr></thead>
+    <tbody>
+    {{range .Data.Tasks}}
+      <tr>
+        <td class="prompt"><a href="/claims/{{.Claim}}/tasks/{{.ID}}">{{.Prompt}}</a></td>
+        <td>{{template "task-status" .}}</td>
+        <td>{{ago .Started}}</td>
+      </tr>
+    {{end}}
+    </tbody>
+  </table>
+  {{else}}
+  <p class="muted">No tasks yet.</p>
+  {{end}}
+</section>
+{{end}}

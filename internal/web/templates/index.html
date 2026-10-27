@@ -1,0 +1,48 @@
+{{define "head"}}{{if .Data.Pending}}<meta http-equiv="refresh" content="3">{{end}}{{end}}
+{{define "content"}}
+<section>
+  <h1>Your sandboxes</h1>
+  {{if .Data.Claims}}
+  <table class="claims">
+    <thead><tr><th>Name</th><th>Pool</th><th>Status</th><th>Expires in</th><th></th></tr></thead>
+    <tbody>
+    {{range .Data.Claims}}
+      <tr>
+        <td><a href="/claims/{{.Name}}">{{.Name}}</a></td>
+        <td>{{.Pool}}</td>
+        <td>{{template "status" .}}</td>
+        <td title="{{clock .ShutdownTime}}">{{until .ShutdownTime}}</td>
+        <td class="actions">
+          <form method="post" action="/claims/{{.Name}}/release"><button class="danger small">Release</button></form>
+        </td>
+      </tr>
+    {{end}}
+    </tbody>
+  </table>
+  {{else}}
+  <p class="muted">You have no sandboxes. Claim one below.</p>
+  {{end}}
+</section>
+
+<section class="card">
+  <h2>Claim a sandbox</h2>
+  {{if .Data.Pools}}
+  <form method="post" action="/claims" class="grid">
+    <label>Pool
+      <select name="pool" required>
+        {{range .Data.Pools}}<option value="{{.Name}}">{{.Name}}{{if .Description}} · {{.Description}}{{end}}</option>{{end}}
+      </select>
+    </label>
+    <label>Name <span class="muted">(optional)</span>
+      <input name="name" placeholder="fix-flaky-test" pattern="[a-z0-9]([-a-z0-9]*[a-z0-9])?" maxlength="63">
+    </label>
+    <label>Expires after (minutes)
+      <input name="ttl" type="number" min="1" value="{{.Data.DefaultTTL}}" required>
+    </label>
+    <button class="primary">Claim</button>
+  </form>
+  {{else}}
+  <p class="muted">No sandbox pools are available.</p>
+  {{end}}
+</section>
+{{end}}

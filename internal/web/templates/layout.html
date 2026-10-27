@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{.Title}} · Airlock</title>
+  <link rel="stylesheet" href="/static/style.css">
+  {{block "head" .}}{{end}}
+</head>
+<body>
+  <header class="bar">
+    <a class="brand" href="/">Airlock</a>
+    {{if .User.Subject}}
+    <form method="post" action="/logout" class="user">
+      <span>{{.User.Name}}</span>
+      <button class="link">Sign out</button>
+    </form>
+    {{end}}
+  </header>
+  <main>{{block "content" .}}{{end}}</main>
+</body>
+</html>
+
+{{define "status"}}{{if .Deleting}}<span class="pill off">Releasing</span>{{else if .Ready}}<span class="pill ok">Ready</span>{{else}}<span class="pill wait" title="{{.Message}}">{{or .Reason "Starting"}}</span>{{end}}{{end}}
+{{define "task-status"}}<span class="pill {{if eq .Status "running"}}wait{{else if eq .Status "succeeded"}}ok{{else}}bad{{end}}">{{.Status}}</span>{{end}}

@@ -1,0 +1,16 @@
+{{define "head"}}<script src="/static/task.js" defer></script>{{end}}
+{{define "content"}}
+{{with .Data}}
+<p class="crumbs"><a href="/">Sandboxes</a> / <a href="/claims/{{.Claim}}">{{.Claim}}</a> /</p>
+<div class="title-row">
+  <h1>Task</h1>
+  <span id="status">{{template "task-status" .}}</span>
+</div>
+<blockquote class="prompt-full">{{.Prompt}}</blockquote>
+<p class="muted" id="result">
+  Started {{ago .Started}}{{if .ExitCode}} · exit code {{.ExitCode}}{{end}}{{if .Error}} · {{.Error}}{{end}}
+</p>
+<pre id="output" class="output"
+  {{if eq .Status "running"}}data-stream="/claims/{{.Claim}}/tasks/{{.ID}}/stream"{{end}}>{{.Output}}</pre>
+{{end}}
+{{end}}
