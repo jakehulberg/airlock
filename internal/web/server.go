@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -65,7 +66,7 @@ func (s *Server) parseTemplates() error {
 		"clock": func(t time.Time) string { return t.Local().Format("Jan 2 15:04") },
 	}
 	s.pages = map[string]*template.Template{}
-	for _, page := range []string{"index", "claim", "task", "error"} {
+	for _, page := range []string{"index", "claim", "error"} {
 		t, err := template.New("layout.html").Funcs(funcs).ParseFS(templateFS, "templates/layout.html", "templates/"+page+".html")
 		if err != nil {
 			return err
@@ -200,7 +201,17 @@ func (s *Server) claim(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	s.render(w, r, http.StatusOK, "claim", claim.Name, map[string]any{"Claim": claim, "Tasks": tasks})
+	// The page is the conversation, oldest first. A running task's output comes in
+	// over its stream, which replays it from the start.
+	slices.Reverse(tasks)
+	running := false
+	for i := range tasks {
+		if tasks[i].Status == api.TaskRunning {
+			tasks[i].Output = ""
+			running = true
+		}
+	}
+	s.render(w, r, http.StatusOK, "claim", claim.Name, map[string]any{"Claim": claim, "Tasks": tasks, "Running": running})
 }
 
 func (s *Server) release(w http.ResponseWriter, r *http.Request) {
@@ -218,21 +229,15 @@ func (s *Server) startTask(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	http.Redirect(w, r, "/claims/"+esc(name)+"/tasks/"+esc(task.ID), http.StatusSeeOther)
+	http.Redirect(w, r, taskURL(name, task.ID), http.StatusSeeOther)
 }
 
+// task sends old links to the task's place in the conversation.
 func (s *Server) task(w http.ResponseWriter, r *http.Request) {
-	task, err := s.Orchestrator.Task(r.Context(), userFrom(r.Context()), r.PathValue("name"), r.PathValue("id"))
-	if err != nil {
-		s.fail(w, r, err)
-		return
-	}
-	// A running task's output comes in over the stream, which replays it from the start.
-	if task.Status == api.TaskRunning {
-		task.Output = ""
-	}
-	s.render(w, r, http.StatusOK, "task", "Task", task)
+	http.Redirect(w, r, taskURL(r.PathValue("name"), r.PathValue("id")), http.StatusSeeOther)
 }
+
+func taskURL(claim, id string) string { return "/claims/" + esc(claim) + "#task-" + esc(id) }
 
 // streamTask relays the orchestrator's event stream to the browser.
 func (s *Server) streamTask(w http.ResponseWriter, r *http.Request) {

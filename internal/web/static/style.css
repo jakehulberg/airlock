@@ -102,6 +102,11 @@ button.link { border: 0; background: none; padding: 0; color: var(--accent); }
 }
 .output:empty::before { content: "Waiting for output…"; color: var(--muted); }
 
+.turn { margin-bottom: 1.5rem; }
+.turn .output { min-height: 0; margin: 0; }
+.turn-meta { margin: .4rem 0 0; font-size: .85rem; }
+#reply[hidden] { display: none; }
+
 @media (max-width: 640px) {
   table.claims th:nth-child(2), table.claims td:nth-child(2) { display: none; }
 }

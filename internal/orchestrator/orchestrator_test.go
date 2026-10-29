@@ -404,6 +404,9 @@ func TestServer(t *testing.T) {
 	if len(events) == 0 || events[len(events)-1] != "done" {
 		t.Errorf("events = %v, want output then done", events)
 	}
+	if got := tasks.List("alice", "c1"); len(got) != 1 || got[0].Output == "" {
+		t.Errorf("list = %+v, want the task with its output", got)
+	}
 
 	if r := call("DELETE", "/v1/claims/c1", "secret", "alice", ""); r.StatusCode != 204 {
 		t.Errorf("delete = %d", r.StatusCode)
