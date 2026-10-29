@@ -1,6 +1,6 @@
 # One Dockerfile for both components: --build-arg CMD=orchestrator or CMD=web.
 # Cross-compiles on the build host, so multi-arch builds need no emulation.
-FROM --platform=$BUILDPLATFORM golang:1.26.0 AS build
+FROM --platform=$BUILDPLATFORM golang:1.27.2 AS build
 ARG CMD
 ARG TARGETOS
 ARG TARGETARCH
