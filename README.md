@@ -18,7 +18,7 @@ browser ──OIDC──▶ web ──bearer token + user headers──▶ orche
 
 - A user picks a `SandboxWarmPool`, a name, and a TTL. The orchestrator creates a `SandboxClaim` with `shutdownTime` and `shutdownPolicy: Delete`, so every sandbox expires.
 - Claims are labeled with a hash of the user's OIDC subject. Users only see and touch their own.
-- A task runs `AIRLOCK_TASK_COMMAND` in the agent container with the prompt on stdin. The default sources `/session/env` (the Agent Vault proxy settings the session sidecar writes) and runs `claude -p`. One task per sandbox at a time.
+- A task runs a command in the agent container with the prompt on stdin. The default sources `/session/env` (the Agent Vault proxy settings the session sidecar writes) and runs `claude -p`; each pool can name its own agent (see [Pools](#pools)). One task per sandbox at a time.
 - Task output is kept in the orchestrator's memory (1 MiB per task, 500 tasks). It's lost on restart, so run one replica.
 
 ## Images
@@ -41,8 +41,8 @@ Tags are `YYYYMMDDTHHMMSS-<sha7>` (UTC build time), the same scheme as life-dash
 | `AIRLOCK_POOL_SELECTOR` | all pools | Label selector for the pools users may claim from |
 | `AIRLOCK_DEFAULT_TTL` | `1h` | |
 | `AIRLOCK_MAX_TTL` | `8h` | |
-| `AIRLOCK_AGENT_CONTAINER` | `agent` | |
-| `AIRLOCK_TASK_COMMAND` | `. /session/env 2>/dev/null; exec claude -p` | Run with `sh -c`, prompt on stdin |
+| `AIRLOCK_AGENT_CONTAINER` | `agent` | Default; a pool can override it |
+| `AIRLOCK_TASK_COMMAND` | `. /session/env 2>/dev/null; exec claude -p` | Default; a pool can override it. Run with `sh -c`, prompt on stdin |
 | `AIRLOCK_TASK_TIMEOUT` | `30m` | |
 | `AIRLOCK_LISTEN` | `:8081` | |
 
@@ -67,7 +67,26 @@ rules:
     verbs: [get, create]
 ```
 
-A pool can have an `airlock.jakehulberg.com/description` annotation, shown in the claim form.
+### Pools
+
+Annotations on a `SandboxWarmPool`, all optional:
+
+| Annotation | |
+|---|---|
+| `airlock.jakehulberg.com/description` | Shown in the claim form |
+| `airlock.jakehulberg.com/agent-container` | The container tasks run in. Default `AIRLOCK_AGENT_CONTAINER` |
+| `airlock.jakehulberg.com/task-command` | Run with `sh -c`, prompt on stdin. Default `AIRLOCK_TASK_COMMAND` |
+
+So pools for different agents sit side by side, e.g. a Codex pool:
+
+```yaml
+metadata:
+  annotations:
+    airlock.jakehulberg.com/description: Codex
+    airlock.jakehulberg.com/task-command: . /session/env 2>/dev/null; exec codex exec -
+```
+
+Only cluster admins can edit pools; the orchestrator can only read them.
 
 ### web
 

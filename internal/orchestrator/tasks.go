@@ -74,8 +74,8 @@ func (k *KubeExecutor) Exec(ctx context.Context, pod *corev1.Pod, container stri
 type Tasks struct {
 	Sandboxes *Sandboxes
 	Executor  Executor
-	Container string        // the agent container in the sandbox pod
-	Command   []string      // run with the prompt on stdin
+	Container string        // the agent container in the sandbox pod, unless the pool says otherwise
+	Command   []string      // run with the prompt on stdin, unless the pool says otherwise
 	Timeout   time.Duration // per task
 	MaxOutput int           // bytes kept per task
 	MaxTasks  int           // tasks kept in total, oldest finished dropped first
@@ -163,6 +163,10 @@ func (s *Tasks) Start(ctx context.Context, user, claim, prompt string) (api.Task
 	if err != nil {
 		return api.Task{}, err
 	}
+	container, command, err := s.agent(ctx, user, claim)
+	if err != nil {
+		return api.Task{}, err
+	}
 
 	s.mu.Lock()
 	if s.tasks == nil {
@@ -197,13 +201,34 @@ func (s *Tasks) Start(ctx context.Context, user, claim, prompt string) (api.Task
 		// Not the request's context: the task outlives the request.
 		runCtx, cancel := context.WithTimeout(context.Background(), s.Timeout)
 		defer cancel()
-		code, err := s.Executor.Exec(runCtx, pod, s.Container, s.Command, strings.NewReader(prompt+"\n"), t)
+		code, err := s.Executor.Exec(runCtx, pod, container, command, strings.NewReader(prompt+"\n"), t)
 		if errors.Is(runCtx.Err(), context.DeadlineExceeded) {
 			err = fmt.Errorf("timed out after %s", s.Timeout)
 		}
 		t.finish(code, err)
 	}()
 	return started, nil
+}
+
+// agent picks the container and command for a claim: its pool's annotations,
+// else the defaults.
+func (s *Tasks) agent(ctx context.Context, user, claim string) (string, []string, error) {
+	c, err := s.Sandboxes.Get(ctx, user, claim)
+	if err != nil {
+		return "", nil, err
+	}
+	a, err := s.Sandboxes.PoolAgent(ctx, c.Pool)
+	if err != nil {
+		return "", nil, err
+	}
+	container, command := s.Container, s.Command
+	if a.Container != "" {
+		container = a.Container
+	}
+	if a.Command != "" {
+		command = []string{"sh", "-c", a.Command}
+	}
+	return container, command, nil
 }
 
 // Wait blocks until every running task has finished. For tests and shutdown.

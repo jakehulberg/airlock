@@ -36,6 +36,12 @@ const (
 	LabelOwner      = "airlock.jakehulberg.com/owner"       // hash of the OIDC subject (label values are limited)
 	AnnotationOwner = "airlock.jakehulberg.com/owner-name"  // email or username, for display
 	AnnotationDesc  = "airlock.jakehulberg.com/description" // optional, on a SandboxWarmPool
+
+	// Optional, on a SandboxWarmPool: which agent its sandboxes run, so pools for
+	// different agents (Claude Code, Codex, ...) can sit side by side. Unset means
+	// the orchestrator's defaults.
+	AnnotationContainer = "airlock.jakehulberg.com/agent-container"
+	AnnotationCommand   = "airlock.jakehulberg.com/task-command" // run with sh -c, prompt on stdin
 )
 
 var (
@@ -101,6 +107,27 @@ func (s *Sandboxes) pool(ctx context.Context, name string) error {
 		return fmt.Errorf("%w: no pool named %q", ErrBadRequest, name)
 	}
 	return err
+}
+
+// Agent is a pool's agent-container and task-command annotations. Empty fields
+// mean the pool doesn't override the default.
+type Agent struct {
+	Container string
+	Command   string
+}
+
+// PoolAgent reads a pool's agent overrides. A pool deleted after the claim was
+// made has none.
+func (s *Sandboxes) PoolAgent(ctx context.Context, name string) (Agent, error) {
+	u, err := s.Dynamic.Resource(PoolGVR).Namespace(s.Namespace).Get(ctx, name, metav1.GetOptions{})
+	if apierrors.IsNotFound(err) {
+		return Agent{}, nil
+	}
+	if err != nil {
+		return Agent{}, err
+	}
+	a := u.GetAnnotations()
+	return Agent{Container: a[AnnotationContainer], Command: a[AnnotationCommand]}, nil
 }
 
 func (s *Sandboxes) List(ctx context.Context, user string) ([]api.Claim, error) {

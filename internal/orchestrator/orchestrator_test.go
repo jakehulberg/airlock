@@ -278,6 +278,40 @@ func TestTaskRuns(t *testing.T) {
 	}
 }
 
+func TestTaskUsesPoolAgent(t *testing.T) {
+	exec := &fakeExec{}
+	tasks, s := newTasks(t, exec)
+	ctx := context.Background()
+	u, err := s.Dynamic.Resource(PoolGVR).Namespace(ns).Get(ctx, "coding-agent", metav1.GetOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	u.SetAnnotations(map[string]string{AnnotationContainer: "codex", AnnotationCommand: "codex exec -"})
+	if _, err := s.Dynamic.Resource(PoolGVR).Namespace(ns).Update(ctx, u, metav1.UpdateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := tasks.Start(ctx, "alice", "c1", "x"); err != nil {
+		t.Fatal(err)
+	}
+	tasks.Wait()
+	if exec.gotPod != "warm-pod-abc/codex" || strings.Join(exec.gotCmd, " ") != "sh -c codex exec -" {
+		t.Errorf("exec got %v on %s", exec.gotCmd, exec.gotPod)
+	}
+}
+
+func TestTaskDefaultsWithoutPoolAgent(t *testing.T) {
+	exec := &fakeExec{}
+	tasks, _ := newTasks(t, exec)
+	if _, err := tasks.Start(context.Background(), "alice", "c1", "x"); err != nil {
+		t.Fatal(err)
+	}
+	tasks.Wait()
+	if exec.gotPod != "warm-pod-abc/agent" || strings.Join(exec.gotCmd, " ") != "sh -c claude -p" {
+		t.Errorf("exec got %v on %s", exec.gotCmd, exec.gotPod)
+	}
+}
+
 func TestTaskFailsOnNonZeroExit(t *testing.T) {
 	tasks, _ := newTasks(t, &fakeExec{code: 2})
 	task, err := tasks.Start(context.Background(), "alice", "c1", "x")
