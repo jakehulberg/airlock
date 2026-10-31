@@ -103,10 +103,6 @@ func (c *Client) Tasks(ctx context.Context, u User, claim string) (tasks []api.T
 	return tasks, c.do(ctx, u, "GET", "/v1/claims/"+esc(claim)+"/tasks", nil, &tasks)
 }
 
-func (c *Client) Task(ctx context.Context, u User, claim, id string) (task api.Task, err error) {
-	return task, c.do(ctx, u, "GET", "/v1/claims/"+esc(claim)+"/tasks/"+esc(id), nil, &task)
-}
-
 func (c *Client) StartTask(ctx context.Context, u User, claim, prompt string) (task api.Task, err error) {
 	return task, c.do(ctx, u, "POST", "/v1/claims/"+esc(claim)+"/tasks", api.CreateTask{Prompt: prompt}, &task)
 }

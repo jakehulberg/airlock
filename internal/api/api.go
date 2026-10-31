@@ -59,7 +59,7 @@ type Task struct {
 	Error    string     `json:"error,omitempty"`
 	Started  time.Time  `json:"started"`
 	Finished *time.Time `json:"finished,omitempty"`
-	Output   string     `json:"output,omitempty"` // only on GET of a single task
+	Output   string     `json:"output,omitempty"` // output so far
 }
 
 // CreateTask is the body of POST /v1/claims/{name}/tasks.

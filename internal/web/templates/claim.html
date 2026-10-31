@@ -1,4 +1,4 @@
-{{define "head"}}{{if not .Data.Claim.Ready}}<meta http-equiv="refresh" content="3">{{end}}{{end}}
+{{define "head"}}{{if not .Data.Claim.Ready}}<meta http-equiv="refresh" content="3">{{end}}<script src="/static/chat.js" defer></script>{{end}}
 {{define "content"}}
 {{with .Data.Claim}}
 <p class="crumbs"><a href="/">Sandboxes</a> /</p>
@@ -15,35 +15,28 @@
 </dl>
 {{end}}
 
-<section class="card">
-  <h2>Run a task</h2>
+<section class="chat">
+  <h2>Conversation</h2>
+  {{range .Data.Tasks}}
+  <article class="turn" id="task-{{.ID}}">
+    <div class="prompt-full">{{.Prompt}}</div>
+    <pre class="output"{{if eq .Status "running"}} data-stream="/claims/{{.Claim}}/tasks/{{.ID}}/stream"{{end}}>{{.Output}}</pre>
+    <p class="muted turn-meta">
+      <span class="task-status">{{template "task-status" .}}</span>
+      <span class="task-result">{{ago .Started}}{{if and .ExitCode (ne .Status "succeeded")}} · exit code {{.ExitCode}}{{end}}{{if .Error}} · {{.Error}}{{end}}</span>
+    </p>
+  </article>
+  {{else}}
+  <p class="muted">No messages yet.</p>
+  {{end}}
+
   {{if .Data.Claim.Ready}}
-  <form method="post" action="/claims/{{.Data.Claim.Name}}/tasks">
-    <textarea name="prompt" rows="5" required placeholder="Fix the flaky test in ./pkg/retry and open a PR"></textarea>
-    <button class="primary">Run</button>
+  <form id="reply" class="card" method="post" action="/claims/{{.Data.Claim.Name}}/tasks"{{if .Data.Running}} hidden{{end}}>
+    <textarea name="prompt" rows="4" required placeholder="Fix the flaky test in ./pkg/retry and open a PR"></textarea>
+    <button class="primary">Send</button> <span class="muted">⌘/Ctrl+Enter</span>
   </form>
   {{else}}
-  <p class="muted">You can run tasks once the sandbox is ready.</p>
-  {{end}}
-</section>
-
-<section>
-  <h2>Tasks</h2>
-  {{if .Data.Tasks}}
-  <table>
-    <thead><tr><th>Prompt</th><th>Status</th><th>Started</th></tr></thead>
-    <tbody>
-    {{range .Data.Tasks}}
-      <tr>
-        <td class="prompt"><a href="/claims/{{.Claim}}/tasks/{{.ID}}">{{.Prompt}}</a></td>
-        <td>{{template "task-status" .}}</td>
-        <td>{{ago .Started}}</td>
-      </tr>
-    {{end}}
-    </tbody>
-  </table>
-  {{else}}
-  <p class="muted">No tasks yet.</p>
+  <p class="muted">You can send messages once the sandbox is ready.</p>
   {{end}}
 </section>
 {{end}}

@@ -105,6 +105,15 @@ func fakeOrchestrator(t *testing.T) (*httptest.Server, *[]string) {
 			}
 			w.WriteHeader(201)
 			_ = json.NewEncoder(w).Encode(api.Claim{Name: "airlock-x1"})
+		case r.Method == "GET" && (r.URL.Path == "/v1/claims/c1" || r.URL.Path == "/v1/claims/c2"):
+			_ = json.NewEncoder(w).Encode(api.Claim{Name: strings.TrimPrefix(r.URL.Path, "/v1/claims/"), Ready: true, ShutdownTime: time.Now().Add(time.Hour)})
+		case r.Method == "GET" && r.URL.Path == "/v1/claims/c1/tasks": // newest first
+			_ = json.NewEncoder(w).Encode([]api.Task{
+				{ID: "t2", Claim: "c1", Prompt: "second", Status: api.TaskRunning, Output: "partial"},
+				{ID: "t1", Claim: "c1", Prompt: "first", Status: api.TaskSucceeded, Output: "answer"},
+			})
+		case r.Method == "GET" && r.URL.Path == "/v1/claims/c2/tasks":
+			_ = json.NewEncoder(w).Encode([]api.Task{{ID: "t3", Claim: "c2", Prompt: "only", Status: api.TaskSucceeded}})
 		case r.URL.Path == "/v1/claims/c1/tasks/t1/stream":
 			w.Header().Set("Content-Type", "text/event-stream")
 			_, _ = io.WriteString(w, "event: output\ndata: {\"chunk\":\"hi\"}\n\nevent: done\ndata: {}\n\n")
@@ -205,6 +214,49 @@ func TestCreateClaim(t *testing.T) {
 	}
 	if rec := post(url.Values{}, ""); rec.Code != 400 || !strings.Contains(rec.Body.String(), "pool is required") {
 		t.Errorf("bad create = %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestConversation(t *testing.T) {
+	h, c, _ := newTestServer(t)
+	get := func(path string) string {
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, signedIn(t, c, httptest.NewRequest("GET", path, nil)))
+		if rec.Code != 200 {
+			t.Fatalf("%s = %d: %s", path, rec.Code, rec.Body)
+		}
+		return rec.Body.String()
+	}
+
+	body := get("/claims/c1")
+	if i, j := strings.Index(body, "first"), strings.Index(body, "second"); i < 0 || j < i {
+		t.Errorf("turns not oldest first: first at %d, second at %d", i, j)
+	}
+	if !strings.Contains(body, "answer") {
+		t.Error("finished task's output missing")
+	}
+	if strings.Contains(body, "partial") {
+		t.Error("running task's output rendered; it should come from the stream")
+	}
+	if !strings.Contains(body, `data-stream="/claims/c1/tasks/t2/stream"`) {
+		t.Error("running task not streamed")
+	}
+	if !strings.Contains(body, `action="/claims/c1/tasks" hidden`) {
+		t.Error("reply form shown while a task runs")
+	}
+
+	body = get("/claims/c2")
+	if !strings.Contains(body, `action="/claims/c2/tasks">`) {
+		t.Error("reply form hidden with nothing running")
+	}
+}
+
+func TestTaskLinksToConversation(t *testing.T) {
+	h, c, _ := newTestServer(t)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, signedIn(t, c, httptest.NewRequest("GET", "/claims/c1/tasks/t1", nil)))
+	if rec.Code != 303 || rec.Header().Get("Location") != "/claims/c1#task-t1" {
+		t.Errorf("task page = %d %q", rec.Code, rec.Header().Get("Location"))
 	}
 }
 

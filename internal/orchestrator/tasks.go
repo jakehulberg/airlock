@@ -273,14 +273,16 @@ func (s *Tasks) lookup(user, claim, id string) (*task, error) {
 	return t, nil
 }
 
-// List returns the user's tasks for a claim, newest first, without output.
+// List returns the user's tasks for a claim, newest first, with their output so far.
 func (s *Tasks) List(user, claim string) []api.Task {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	out := []api.Task{}
 	for _, t := range s.tasks {
 		if t.owner == user && t.t.Claim == claim {
-			out = append(out, t.meta())
+			snap, o, _ := t.snapshot(0)
+			snap.Output = string(o)
+			out = append(out, snap)
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Started.After(out[j].Started) })

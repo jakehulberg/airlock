@@ -19,6 +19,7 @@ browser ──OIDC──▶ web ──bearer token + user headers──▶ orche
 - A user picks a `SandboxWarmPool`, a name, and a TTL. The orchestrator creates a `SandboxClaim` with `shutdownTime` and `shutdownPolicy: Delete`, so every sandbox expires.
 - Claims are labeled with a hash of the user's OIDC subject. Users only see and touch their own.
 - A task runs a command in the agent container with the prompt on stdin. The default sources `/session/env` (the Agent Vault proxy settings the session sidecar writes) and runs `claude -p`; each pool can name its own agent (see [Pools](#pools)). One task per sandbox at a time.
+- The sandbox page is a conversation: each task's prompt and output in order, the running one streaming, and a reply box once it finishes. For follow-ups to build on earlier tasks, the pool's command has to continue the agent's session (for Claude Code, `claude -p --continue`).
 - Task output is kept in the orchestrator's memory (1 MiB per task, 500 tasks). It's lost on restart, so run one replica.
 
 ## Images
@@ -117,7 +118,7 @@ Every `/v1` request needs `Authorization: Bearer $AIRLOCK_API_TOKEN` and `X-Airl
 | `POST /v1/claims` | `{"pool", "name"?, "ttlMinutes"?}` |
 | `GET /v1/claims/{name}` | |
 | `DELETE /v1/claims/{name}` | Release |
-| `GET /v1/claims/{name}/tasks` | |
+| `GET /v1/claims/{name}/tasks` | Newest first, with output so far |
 | `POST /v1/claims/{name}/tasks` | `{"prompt"}` |
 | `GET /v1/claims/{name}/tasks/{id}` | With output so far |
 | `GET /v1/claims/{name}/tasks/{id}/stream` | Server-sent events: `output` chunks, then `done` |
