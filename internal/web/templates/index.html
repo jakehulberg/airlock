@@ -1,48 +1,42 @@
-{{define "head"}}{{if .Data.Pending}}<meta http-equiv="refresh" content="3">{{end}}{{end}}
+{{define "head"}}<script src="/static/overview.js" defer></script>{{end}}
 {{define "content"}}
-<section>
-  <h1>Your sandboxes</h1>
+<div class="page-heading">
+  <div><p class="eyebrow">Workspace</p><h1>Sandboxes</h1><p class="muted">Manage your environments and continue your agent sessions.</p></div>
+  <a class="button primary" href="#new-sandbox">New sandbox</a>
+</div>
+<div class="workspace">
+<section aria-labelledby="sandboxes-heading">
+  <div class="section-heading"><h2 id="sandboxes-heading">Your environments <span class="count">{{len .Data.Claims}}</span></h2><span id="refresh-status" class="muted" role="status">Updates automatically</span></div>
+  <div id="sandbox-list" class="panel">
   {{if .Data.Claims}}
-  <table class="claims">
-    <thead><tr><th>Name</th><th>Pool</th><th>Status</th><th>Expires in</th><th></th></tr></thead>
-    <tbody>
     {{range .Data.Claims}}
-      <tr>
-        <td><a href="/claims/{{.Name}}">{{.Name}}</a></td>
-        <td>{{.Pool}}</td>
-        <td>{{template "status" .}}</td>
-        <td title="{{clock .ShutdownTime}}">{{until .ShutdownTime}}</td>
-        <td class="actions">
-          <form method="post" action="/claims/{{.Name}}/release"><button class="danger small">Release</button></form>
-        </td>
-      </tr>
+    <article class="sandbox-row">
+      <div class="sandbox-main"><a class="sandbox-name" href="/claims/{{.Name}}">{{.Name}}</a><p class="muted">{{.Pool}}</p></div>
+      <div class="sandbox-state">{{template "status" .}}<span class="muted" title="{{clock .ShutdownTime}}">{{if expired .ShutdownTime}}Expired{{else}}{{until .ShutdownTime}} remaining{{end}}</span></div>
+      <a class="button small" href="/claims/{{.Name}}">Open<span class="sr-only"> {{.Name}}</span> <span aria-hidden="true">→</span></a>
+    </article>
     {{end}}
-    </tbody>
-  </table>
   {{else}}
-  <p class="muted">You have no sandboxes. Claim one below.</p>
+    <div class="empty"><h3>No sandboxes yet</h3><p class="muted">Create an environment to start working with an agent.</p><a href="#new-sandbox">Create your first sandbox →</a></div>
   {{end}}
+  </div>
 </section>
-
-<section class="card">
-  <h2>Claim a sandbox</h2>
+<aside>
+<section class="panel setup" id="new-sandbox" aria-labelledby="create-heading">
+  <h2 id="create-heading">New sandbox</h2><p class="muted">Choose an agent pool and how long you need the environment.</p>
   {{if .Data.Pools}}
-  <form method="post" action="/claims" class="grid">
-    <label>Pool
-      <select name="pool" required>
-        {{range .Data.Pools}}<option value="{{.Name}}">{{.Name}}{{if .Description}} · {{.Description}}{{end}}</option>{{end}}
-      </select>
+  <form method="post" action="/claims" class="stack">
+    <label>Agent pool
+      <select name="pool" required>{{range .Data.Pools}}<option value="{{.Name}}">{{.Name}}{{if .Description}} · {{.Description}}{{end}} ({{.Ready}} ready)</option>{{end}}</select>
     </label>
-    <label>Name <span class="muted">(optional)</span>
-      <input name="name" placeholder="fix-flaky-test" pattern="[a-z0-9]([-a-z0-9]*[a-z0-9])?" maxlength="63">
-    </label>
-    <label>Expires after (minutes)
-      <input name="ttl" type="number" min="1" value="{{.Data.DefaultTTL}}" required>
-    </label>
-    <button class="primary">Claim</button>
+    <label>Name <span class="optional">Optional</span><input name="name" placeholder="e.g. update-search" pattern="[a-z0-9]([-a-z0-9]*[a-z0-9])?" maxlength="63" aria-describedby="name-help"></label>
+    <small id="name-help" class="muted">Lowercase letters, numbers, and hyphens. Leave blank for an automatic name.</small>
+    <label>Lifetime (minutes)<input name="ttl" type="number" min="1" value="{{.Data.DefaultTTL}}" required></label>
+    <p class="form-note">The environment and its files are deleted when it expires.</p>
+    <button class="primary">Create sandbox</button>
   </form>
-  {{else}}
-  <p class="muted">No sandbox pools are available.</p>
-  {{end}}
+  {{else}}<p class="notice">No agent pools are available. Contact your team to configure a pool.</p>{{end}}
 </section>
+</aside>
+</div>
 {{end}}

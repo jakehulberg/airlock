@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -413,5 +414,57 @@ func TestServer(t *testing.T) {
 	}
 	if got := tasks.List("alice", "c1"); len(got) != 0 {
 		t.Errorf("tasks kept after release: %d", len(got))
+	}
+}
+
+func TestPodRejectsExpiredClaim(t *testing.T) {
+	s, dyn, kube := newSandboxes(t, pool("coding-agent", nil))
+	ctx := context.Background()
+	if _, err := s.Create(ctx, "alice", "alice", api.CreateClaim{Pool: "coding-agent", Name: "c1"}); err != nil {
+		t.Fatal(err)
+	}
+	markReady(t, s, dyn, kube, "c1")
+	s.Now = func() time.Time { return now.Add(time.Hour) }
+	if _, err := s.Pod(ctx, "alice", "c1"); !errors.Is(err, ErrNotReady) {
+		t.Fatalf("expired claim: %v", err)
+	}
+}
+
+func TestLegacyPodLifecycle(t *testing.T) {
+	for _, phase := range []corev1.PodPhase{corev1.PodPending, corev1.PodFailed, corev1.PodRunning} {
+		for _, deleting := range []bool{false, true} {
+			t.Run(string(phase)+"/deleting="+fmt.Sprint(deleting), func(t *testing.T) {
+				s, dyn, kube := newSandboxes(t, pool("coding-agent", nil))
+				ctx := context.Background()
+				if _, err := s.Create(ctx, "alice", "alice", api.CreateClaim{Pool: "coding-agent", Name: "c1"}); err != nil {
+					t.Fatal(err)
+				}
+				markReady(t, s, dyn, kube, "c1")
+				sb, err := dyn.Resource(SandboxGVR).Namespace(ns).Get(ctx, "c1-sb", metav1.GetOptions{})
+				if err != nil {
+					t.Fatal(err)
+				}
+				unstructured.RemoveNestedField(sb.Object, "status", "selector")
+				if _, err := dyn.Resource(SandboxGVR).Namespace(ns).Update(ctx, sb, metav1.UpdateOptions{}); err != nil {
+					t.Fatal(err)
+				}
+				pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "c1-sb", Namespace: ns}, Status: corev1.PodStatus{Phase: phase}}
+				if deleting {
+					ts := metav1.NewTime(now)
+					pod.DeletionTimestamp = &ts
+				}
+				if _, err := kube.CoreV1().Pods(ns).Create(ctx, pod, metav1.CreateOptions{}); err != nil {
+					t.Fatal(err)
+				}
+				_, err = s.Pod(ctx, "alice", "c1")
+				if phase == corev1.PodRunning && !deleting {
+					if err != nil {
+						t.Fatal(err)
+					}
+				} else if !errors.Is(err, ErrNotReady) {
+					t.Fatalf("unavailable pod: %v", err)
+				}
+			})
+		}
 	}
 }
