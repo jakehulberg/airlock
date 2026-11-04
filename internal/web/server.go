@@ -61,9 +61,10 @@ func (s *Server) Handler() (http.Handler, error) {
 
 func (s *Server) parseTemplates() error {
 	funcs := template.FuncMap{
-		"until": func(t time.Time) string { return humanDuration(time.Until(t)) },
-		"ago":   func(t time.Time) string { return humanDuration(time.Since(t)) + " ago" },
-		"clock": func(t time.Time) string { return t.Local().Format("Jan 2 15:04") },
+		"expired": func(t time.Time) bool { return !t.IsZero() && !time.Now().Before(t) },
+		"until":   func(t time.Time) string { return humanDuration(time.Until(t)) },
+		"ago":     func(t time.Time) string { return humanDuration(time.Since(t)) + " ago" },
+		"clock":   func(t time.Time) string { return t.Local().Format("Jan 2 15:04") },
 	}
 	s.pages = map[string]*template.Template{}
 	for _, page := range []string{"index", "claim", "error"} {
@@ -161,16 +162,9 @@ func (s *Server) index(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	pending := false
-	for _, c := range claims {
-		if !c.Ready {
-			pending = true
-		}
-	}
 	s.render(w, r, http.StatusOK, "index", "Sandboxes", map[string]any{
 		"Claims":     claims,
 		"Pools":      pools,
-		"Pending":    pending,
 		"DefaultTTL": int(s.DefaultTTL.Minutes()),
 	})
 }

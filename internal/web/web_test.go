@@ -282,3 +282,35 @@ func TestHumanDuration(t *testing.T) {
 		}
 	}
 }
+
+func TestSessionAvailability(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		claim    api.Claim
+		composer bool
+		status   string
+	}{
+		{"ready", api.Claim{Ready: true, ShutdownTime: time.Now().Add(time.Hour)}, true, "Ready"},
+		{"starting", api.Claim{}, false, "Starting"},
+		{"releasing", api.Claim{Ready: true, Deleting: true}, false, "Releasing"},
+		{"expired", api.Claim{Ready: true, ShutdownTime: time.Now().Add(-time.Minute)}, false, "Expired"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := &Server{}
+			if err := s.parseTemplates(); err != nil {
+				t.Fatal(err)
+			}
+			var body strings.Builder
+			err := s.pages["claim"].Execute(&body, page{Data: map[string]any{"Claim": tc.claim, "Tasks": []api.Task{}, "Running": false}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := strings.Contains(body.String(), `id="reply"`); got != tc.composer {
+				t.Errorf("composer=%v, want %v", got, tc.composer)
+			}
+			if !strings.Contains(body.String(), tc.status) {
+				t.Errorf("missing status %q", tc.status)
+			}
+		})
+	}
+}

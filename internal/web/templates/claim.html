@@ -1,42 +1,44 @@
-{{define "head"}}{{if not .Data.Claim.Ready}}<meta http-equiv="refresh" content="3">{{end}}<script src="/static/chat.js" defer></script>{{end}}
+{{define "head"}}<script src="/static/chat.js" defer></script>{{end}}
 {{define "content"}}
 {{with .Data.Claim}}
-<p class="crumbs"><a href="/">Sandboxes</a> /</p>
-<div class="title-row">
-  <h1>{{.Name}}</h1>
-  <form method="post" action="/claims/{{.Name}}/release"><button class="danger">Release</button></form>
-</div>
-<dl class="facts">
-  <dt>Status</dt><dd>{{template "status" .}}{{if and (not .Ready) .Message}} <span class="muted">{{.Message}}</span>{{end}}</dd>
-  <dt>Pool</dt><dd>{{.Pool}}</dd>
-  <dt>Sandbox</dt><dd>{{or .Sandbox "not assigned yet"}}</dd>
-  <dt>Claimed</dt><dd>{{ago .Created}}</dd>
-  <dt>Expires</dt><dd>{{clock .ShutdownTime}} (in {{until .ShutdownTime}})</dd>
-</dl>
+<nav class="crumbs" aria-label="Breadcrumb"><a href="/">Sandboxes</a><span aria-hidden="true">/</span><span>Session</span></nav>
+<div class="page-heading"><div><p class="eyebrow">Agent session</p><h1>{{.Name}}</h1></div>{{template "status" .}}</div>
 {{end}}
-
-<section class="chat">
-  <h2>Conversation</h2>
+<div class="workspace session-workspace">
+<section class="chat" aria-labelledby="conversation-heading">
+  <div class="section-heading"><h2 id="conversation-heading">Conversation</h2><span class="muted">{{len .Data.Tasks}} {{if eq (len .Data.Tasks) 1}}task{{else}}tasks{{end}}</span></div>
   {{range .Data.Tasks}}
-  <article class="turn" id="task-{{.ID}}">
-    <div class="prompt-full">{{.Prompt}}</div>
-    <pre class="output"{{if eq .Status "running"}} data-stream="/claims/{{.Claim}}/tasks/{{.ID}}/stream"{{end}}>{{.Output}}</pre>
-    <p class="muted turn-meta">
-      <span class="task-status">{{template "task-status" .}}</span>
-      <span class="task-result">{{ago .Started}}{{if and .ExitCode (ne .Status "succeeded")}} · exit code {{.ExitCode}}{{end}}{{if .Error}} · {{.Error}}{{end}}</span>
-    </p>
+  <article class="turn panel" id="task-{{.ID}}">
+    <div class="prompt-full"><p class="eyebrow">You</p>{{.Prompt}}</div>
+    <div class="response-heading"><span>Agent output</span><span class="task-status">{{template "task-status" .}}</span></div>
+    <pre class="output" tabindex="0" aria-label="Agent output"{{if eq .Status "running"}} data-stream="/claims/{{.Claim}}/tasks/{{.ID}}/stream"{{end}}>{{.Output}}</pre>
+    <p class="muted turn-meta"><span class="task-result">{{ago .Started}}{{if and .ExitCode (ne .Status "succeeded")}} · exit code {{.ExitCode}}{{end}}{{if .Error}} · {{.Error}}{{end}}</span><span class="stream-status" role="status"></span></p>
   </article>
   {{else}}
-  <p class="muted">No messages yet.</p>
+  <div class="empty panel"><h3>Start a conversation</h3><p class="muted">Describe the task, relevant files, and the outcome you need.</p></div>
   {{end}}
-
-  {{if .Data.Claim.Ready}}
-  <form id="reply" class="card" method="post" action="/claims/{{.Data.Claim.Name}}/tasks"{{if .Data.Running}} hidden{{end}}>
-    <textarea name="prompt" rows="4" required placeholder="Fix the flaky test in ./pkg/retry and open a PR"></textarea>
-    <button class="primary">Send</button> <span class="muted">⌘/Ctrl+Enter</span>
+  {{if and .Data.Claim.Ready (not .Data.Claim.Deleting) (not (expired .Data.Claim.ShutdownTime))}}
+  <p id="running-notice" class="notice" role="status"{{if not .Data.Running}} hidden{{end}}>The agent is working. You can send another message when this task finishes.</p>
+  <form id="reply" class="panel composer" method="post" action="/claims/{{.Data.Claim.Name}}/tasks"{{if .Data.Running}} hidden{{end}}>
+    <label for="prompt">Message the agent</label>
+    <textarea id="prompt" name="prompt" rows="4" required placeholder="Describe what you would like to work on…"></textarea>
+    <div class="composer-actions"><span class="muted">⌘ / Ctrl + Enter to send</span><button class="primary">Send message</button></div>
   </form>
   {{else}}
-  <p class="muted">You can send messages once the sandbox is ready.</p>
+  <div class="notice"{{if not (expired .Data.Claim.ShutdownTime)}} data-pending{{end}} role="status">{{if .Data.Claim.Deleting}}This sandbox is being released.{{else if expired .Data.Claim.ShutdownTime}}This sandbox has expired. Create a new environment to continue.{{else}}Preparing your environment. This page will update when it is ready.{{end}} <a href="">Refresh</a></div>
   {{end}}
 </section>
+<aside>
+{{with .Data.Claim}}
+<section class="panel setup">
+  <h2>Environment</h2>
+  <dl class="facts"><dt>Agent pool</dt><dd>{{.Pool}}</dd><dt>Created</dt><dd>{{ago .Created}}</dd><dt>Time remaining</dt><dd>{{until .ShutdownTime}}</dd><dt>Expires</dt><dd>{{clock .ShutdownTime}}</dd></dl>
+  {{if and (not .Ready) .Message}}<p class="notice">{{.Message}}</p>{{end}}
+  <details><summary>Infrastructure details</summary><dl class="facts"><dt>Sandbox</dt><dd>{{or .Sandbox "Awaiting assignment"}}</dd>{{if .Reason}}<dt>Condition</dt><dd>{{.Reason}}</dd>{{end}}</dl></details>
+  <div class="release-area"><p class="muted">Release this environment when you are finished. Its files will be deleted.</p><form method="post" action="/claims/{{.Name}}/release"><button class="danger"{{if .Deleting}} disabled{{end}}>Release sandbox</button></form></div>
+</section>
+{{end}}
+<p class="aside-note">Task history is temporary and clears when the service restarts. Conversation continuity depends on the agent pool configuration.</p>
+</aside>
+</div>
 {{end}}

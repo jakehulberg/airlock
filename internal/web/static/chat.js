@@ -5,7 +5,9 @@
   const reply = document.getElementById("reply");
   const atBottom = () => window.innerHeight + window.scrollY >= document.body.offsetHeight - 40;
 
-  if (!location.hash && document.querySelector(".turn")) window.scrollTo(0, document.body.scrollHeight);
+  if (document.querySelector("[data-pending]")) {
+    setTimeout(() => location.reload(), 5000);
+  }
 
   if (reply) {
     const text = reply.querySelector("textarea");
@@ -13,7 +15,6 @@
       if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) reply.requestSubmit();
     });
     reply.addEventListener("submit", () => { reply.querySelector("button").disabled = true; });
-    if (!reply.hidden && document.querySelector(".turn")) text.focus();
   }
 
   for (const out of document.querySelectorAll("[data-stream]")) follow(out);
@@ -22,9 +23,13 @@
     const turn = out.closest(".turn");
     const status = turn.querySelector(".task-status");
     const result = turn.querySelector(".task-result");
+    const connection = turn.querySelector(".stream-status");
     const es = new EventSource(out.dataset.stream);
+    es.addEventListener("error", () => {
+      connection.textContent = "Connection interrupted. Reconnecting… Refresh the page if this continues.";
+    });
 
-    es.addEventListener("open", () => { out.textContent = ""; });
+    es.addEventListener("open", () => { out.textContent = ""; connection.textContent = ""; });
     es.addEventListener("output", (e) => {
       const follow = atBottom();
       out.textContent += JSON.parse(e.data).chunk;
@@ -32,11 +37,12 @@
     });
     es.addEventListener("done", (e) => {
       es.close();
+      connection.textContent = "";
       delete out.dataset.stream;
       const task = JSON.parse(e.data);
       const pill = document.createElement("span");
       pill.className = "pill " + (task.status === "succeeded" ? "ok" : "bad");
-      pill.textContent = task.status;
+      pill.textContent = task.status === "succeeded" ? "Completed" : "Failed";
       status.replaceChildren(pill);
       const parts = [];
       if (task.exitCode !== undefined && task.status !== "succeeded") parts.push("exit code " + task.exitCode);
@@ -44,8 +50,7 @@
       if (parts.length) result.textContent += " · " + parts.join(" · ");
       if (reply && !document.querySelector("[data-stream]")) {
         reply.hidden = false;
-        reply.querySelector("textarea").focus();
-        window.scrollTo(0, document.body.scrollHeight);
+        document.getElementById("running-notice").hidden = true;
       }
     });
   }

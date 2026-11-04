@@ -249,7 +249,7 @@ func (s *Sandboxes) Pod(ctx context.Context, user, name string) (*corev1.Pod, er
 		return nil, err
 	}
 	c := toClaim(u)
-	if !c.Ready || c.Sandbox == "" || c.Deleting {
+	if !c.Ready || c.Sandbox == "" || c.Deleting || (!c.ShutdownTime.IsZero() && !s.now().Before(c.ShutdownTime)) {
 		return nil, ErrNotReady
 	}
 	sb, err := s.Dynamic.Resource(SandboxGVR).Namespace(s.Namespace).Get(ctx, c.Sandbox, metav1.GetOptions{})
@@ -267,7 +267,13 @@ func (s *Sandboxes) Pod(ctx context.Context, user, name string) (*corev1.Pod, er
 		if apierrors.IsNotFound(err) {
 			return nil, ErrNotReady
 		}
-		return pod, err
+		if err != nil {
+			return nil, err
+		}
+		if !runningPod(pod) {
+			return nil, ErrNotReady
+		}
+		return pod, nil
 	}
 	pods, err := s.Kube.CoreV1().Pods(s.Namespace).List(ctx, metav1.ListOptions{LabelSelector: selector})
 	if err != nil {
@@ -275,11 +281,16 @@ func (s *Sandboxes) Pod(ctx context.Context, user, name string) (*corev1.Pod, er
 	}
 	for i := range pods.Items {
 		p := &pods.Items[i]
-		if p.Status.Phase == corev1.PodRunning && p.DeletionTimestamp == nil {
+		if runningPod(p) {
 			return p, nil
 		}
 	}
 	return nil, ErrNotReady
+}
+
+// Apply the same lifecycle check to both selector and legacy pod lookup.
+func runningPod(p *corev1.Pod) bool {
+	return p.Status.Phase == corev1.PodRunning && p.DeletionTimestamp == nil
 }
 
 func toClaim(u *unstructured.Unstructured) api.Claim {
