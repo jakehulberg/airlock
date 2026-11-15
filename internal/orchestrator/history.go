@@ -12,17 +12,17 @@ import (
 // Restore recovers interactive history. An interrupted exec keeps its claim lock:
 // releasing the sandbox is required before another execution can start there.
 func (s *Tasks) Restore(ctx context.Context) error {
-	rows, err := s.Store.DB.Query(ctx, `SELECT owner,data,active FROM interactive_tasks ORDER BY updated_at DESC LIMIT 500`)
+	rows, err := s.Store.DB.Query(ctx, `SELECT owner,data,active,pod_name,pod_uid FROM interactive_tasks ORDER BY updated_at DESC LIMIT 500`)
 	if err != nil {
 		return err
 	}
 	defer rows.Close()
 	s.tasks = map[string]*task{}
 	for rows.Next() {
-		var owner string
+		var owner, podName, podUID string
 		var b []byte
 		var active bool
-		if err = rows.Scan(&owner, &b, &active); err != nil {
+		if err = rows.Scan(&owner, &b, &active, &podName, &podUID); err != nil {
 			return err
 		}
 		var v api.Task
@@ -33,11 +33,16 @@ func (s *Tasks) Restore(ctx context.Context) error {
 			v.Status = api.TaskFailed
 			v.Error = "Execution outcome is uncertain after restart. Release this sandbox before starting new work."
 		}
-		t := &task{owner: owner, limit: s.MaxOutput, t: v, out: []byte(v.Output), changed: make(chan struct{})}
+		t := &task{owner: owner, podName: podName, podUID: podUID, limit: s.MaxOutput, t: v, out: []byte(v.Output), changed: make(chan struct{})}
 		t.t.Output = ""
 		s.tasks[v.ID] = t
 	}
-	return rows.Err()
+	if err = rows.Err(); err != nil {
+		return err
+	}
+	rows.Close()
+	_, err = s.Store.DB.Exec(ctx, `UPDATE interactive_tasks SET data=jsonb_set(jsonb_set(data,'{status}','"failed"'::jsonb),'{error}',to_jsonb('Execution outcome is uncertain after restart. Release this sandbox before starting new work.'::text)) WHERE active`)
+	return err
 }
 func (s *Tasks) persistInteractive(t *task, insert bool) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -49,13 +54,13 @@ func (s *Tasks) persistInteractive(t *task, insert bool) error {
 		return err
 	}
 	if insert {
-		_, err = s.Store.DB.Exec(ctx, `INSERT INTO interactive_tasks(id,owner,claim,data,active) VALUES($1,$2,$3,$4,true)`, v.ID, t.owner, v.Claim, b)
+		_, err = s.Store.DB.Exec(ctx, `INSERT INTO interactive_tasks(id,owner,claim,data,active,pod_name,pod_uid) VALUES($1,$2,$3,$4,true,$5,$6)`, v.ID, t.owner, v.Claim, b, t.podName, t.podUID)
 		if err != nil {
 			return fmt.Errorf("%w: sandbox has active or uncertain work, or history could not be persisted", ErrConflict)
 		}
 		return nil
 	}
 	// A transport error cannot prove the remote process has stopped.
-	_, err = s.Store.DB.Exec(ctx, `UPDATE interactive_tasks SET data=$2,active=$3,updated_at=now() WHERE id=$1`, v.ID, b, v.Status == api.TaskRunning || v.Error != "")
+	_, err = s.Store.DB.Exec(ctx, `UPDATE interactive_tasks SET data=$2,active=($3 AND NOT released),updated_at=now() WHERE id=$1`, v.ID, b, v.Status == api.TaskRunning || v.Error != "")
 	return err
 }

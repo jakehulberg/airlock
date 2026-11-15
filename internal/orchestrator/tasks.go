@@ -69,9 +69,8 @@ func (k *KubeExecutor) Exec(ctx context.Context, pod *corev1.Pod, container stri
 	return 0, nil
 }
 
-// Tasks runs agent tasks in claimed sandboxes and keeps their output in memory.
-// Output is lost when the orchestrator restarts; the sandbox is the source of
-// truth for anything the agent produced.
+// Tasks runs interactive agent tasks in claimed sandboxes. Store persists history;
+// the in-memory cache provides low-latency SSE and one-active-task checks.
 type Tasks struct {
 	Store     *operations.Store
 	Sandboxes *Sandboxes
@@ -88,6 +87,8 @@ type Tasks struct {
 }
 
 type task struct {
+	podName string
+	podUID  string
 	owner   string
 	persist func() error
 	limit   int // bytes of output kept
@@ -194,6 +195,7 @@ func (s *Tasks) Start(ctx context.Context, user, claim, prompt string) (api.Task
 	}
 	t := &task{
 		owner:   user,
+		podName: pod.Name, podUID: string(pod.UID),
 		limit:   s.MaxOutput,
 		changed: make(chan struct{}),
 		t: api.Task{
@@ -348,11 +350,15 @@ func (s *Tasks) Follow(ctx context.Context, user, claim, id string, onOutput fun
 	}
 }
 
-// Forget drops a claim's tasks, after the claim is released.
-func (s *Tasks) Forget(user, claim string) {
+// Forget releases the durable claim lock while retaining history, or drops the
+// in-memory records when persistence is not configured (unit tests).
+func (s *Tasks) Forget(user, claim string) error {
 	if s.Store != nil {
-		return
-	} // Durable history remains available after release.
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_, err := s.Store.DB.Exec(ctx, `UPDATE interactive_tasks SET active=false,released=true,updated_at=now() WHERE owner=$1 AND claim=$2`, user, claim)
+		return err // Durable history remains available after release.
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for id, t := range s.tasks {
@@ -360,4 +366,5 @@ func (s *Tasks) Forget(user, claim string) {
 			delete(s.tasks, id)
 		}
 	}
+	return nil
 }

@@ -1,7 +1,10 @@
 # Airlock
 
-Airlock is a web UI for claiming agent sandboxes
-([kubernetes-sigs/agent-sandbox](https://github.com/kubernetes-sigs/agent-sandbox)) and running
+Airlock manages durable agent tasks, workflows, schedules, and interactive agent sandboxes.
+The [orchestration guide](docs/orchestration.md) covers the operations console and recovery.
+
+Its interactive web UI claims agent sandboxes
+([kubernetes-sigs/agent-sandbox](https://github.com/kubernetes-sigs/agent-sandbox)) and runs
 agent tasks in them. Each user gets their own short-lived sandbox, and the agent's output streams
 back to the browser.
 
@@ -40,8 +43,8 @@ browser ──1. OIDC (Authentik)──▶ web ──2. bearer token + user head
   shows a reply box once the task finishes
 - If follow-ups should build on earlier tasks, the pool's command has to continue the agent's
   session (for Claude Code, `claude -p --continue`)
-- The orchestrator keeps task output in memory: 1 MiB per task, 500 tasks. Output is lost on
-  restart, so run one replica
+- PostgreSQL retains interactive history and bounded output across restarts. Interrupted sessions
+  remain locked until the sandbox is released. Keep one replica for interactive SSE routing
 
 ## Images
 
@@ -60,6 +63,8 @@ tag by its timestamp. Both images built from one commit share the tag.
 | Variable | Default | What |
 |---|---|---|
 | `AIRLOCK_API_TOKEN` | required | Shared with `web` |
+| `AIRLOCK_DATABASE_URL` | required | Dedicated PostgreSQL connection URI |
+| `AIRLOCK_DATABASE_CA` | unset | CA file; enables verified database TLS |
 | `AIRLOCK_NAMESPACE` | `agents` | Namespace for pools and claims |
 | `AIRLOCK_POOL_SELECTOR` | all pools | Label selector for the pools users may claim from |
 | `AIRLOCK_DEFAULT_TTL` | `1h` | Claim TTL if the request doesn't set one |
@@ -129,7 +134,7 @@ The orchestrator can only read pools, so only cluster admins can change them.
 
 ### Exposure
 
-- Both components serve `GET /healthz`
+- Both components serve `GET /healthz`; orchestrator readiness uses `GET /readyz`
 - Expose only `web`. Restrict the orchestrator's ingress to `web` with a NetworkPolicy
 
 ## Orchestrator API
@@ -161,7 +166,7 @@ The request and response types are in [internal/api/api.go](internal/api/api.go)
 go test -race ./...
 
 # orchestrator, against your current kubectl context
-AIRLOCK_API_TOKEN=dev go run ./cmd/orchestrator
+AIRLOCK_API_TOKEN=dev AIRLOCK_DATABASE_URL=... go run ./cmd/orchestrator
 
 # web (needs an OIDC client with http://localhost:8080/callback as a redirect URI)
 AIRLOCK_PUBLIC_URL=http://localhost:8080 AIRLOCK_ORCHESTRATOR_URL=http://localhost:8081 \

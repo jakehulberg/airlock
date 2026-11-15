@@ -42,6 +42,10 @@ func (s *Server) Handler() (http.Handler, error) {
 
 	app := http.NewServeMux()
 	app.HandleFunc("GET /{$}", s.index)
+	app.HandleFunc("GET /operations", s.operations)
+	app.HandleFunc("GET /operations/api", s.operationsAPI)
+	app.HandleFunc("GET /operations/api/{path...}", s.operationsAPI)
+	app.HandleFunc("POST /operations/api/{path...}", s.operationsAPI)
 	app.HandleFunc("POST /claims", s.createClaim)
 	app.HandleFunc("GET /claims/{name}", s.claim)
 	app.HandleFunc("POST /claims/{name}/release", s.release)
@@ -67,7 +71,7 @@ func (s *Server) parseTemplates() error {
 		"clock":   func(t time.Time) string { return t.Local().Format("Jan 2 15:04") },
 	}
 	s.pages = map[string]*template.Template{}
-	for _, page := range []string{"index", "claim", "error"} {
+	for _, page := range []string{"index", "claim", "error", "operations"} {
 		t, err := template.New("layout.html").Funcs(funcs).ParseFS(templateFS, "templates/layout.html", "templates/"+page+".html")
 		if err != nil {
 			return err

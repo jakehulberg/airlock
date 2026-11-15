@@ -314,3 +314,35 @@ func TestSessionAvailability(t *testing.T) {
 		})
 	}
 }
+
+func TestOperationsPageAndAuthentication(t *testing.T) {
+	h, c, _ := newTestServer(t)
+	req := httptest.NewRequest("GET", "/operations", nil)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != http.StatusSeeOther && w.Code != http.StatusFound {
+		t.Fatalf("unauthenticated operations: %d", w.Code)
+	}
+	req = httptest.NewRequest("GET", "/operations", nil)
+	rec := httptest.NewRecorder()
+	_ = setCookie(c, rec, sessionCookie, User{Subject: "iss#alice", Name: "Team member"}, time.Hour)
+	req.AddCookie(rec.Result().Cookies()[0])
+	w = httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != 200 {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	for _, want := range []string{"Create task", "Workflow definitions", "Schedules", "Require approval", "/static/operations.js"} {
+		if !strings.Contains(w.Body.String(), want) {
+			t.Errorf("missing %q", want)
+		}
+	}
+	req = httptest.NewRequest("POST", "/operations/api/tasks", strings.NewReader(`{}`))
+	req.Header.Set("Origin", "https://untrusted.example")
+	req.AddCookie(rec.Result().Cookies()[0])
+	w = httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != 403 {
+		t.Fatalf("CSRF accepted: %d", w.Code)
+	}
+}

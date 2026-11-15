@@ -18,7 +18,8 @@
     </form>
     {{end}}
   </header>
-  <main id="main">{{block "content" .}}{{end}}</main>
+  {{if .User.Subject}}<nav class="ops-nav" aria-label="Main navigation"><a href="/operations#overview">Overview</a><a href="/">Sandboxes</a><a href="/operations#agents">Agents</a><a href="/operations#tasks">Tasks</a><a href="/operations#workflows">Workflows</a><a href="/operations#schedules">Schedules</a><a href="/operations#activity">Activity</a><a href="/operations#approvals">Approvals</a></nav>{{end}}
+ <main id="main">{{block "content" .}}{{end}}</main>
 </body>
 </html>
 

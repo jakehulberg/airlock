@@ -103,7 +103,10 @@ func (s *Server) deleteClaim(w http.ResponseWriter, r *http.Request) {
 		s.respond(w, r, nil, err)
 		return
 	}
-	s.Tasks.Forget(user(r), name)
+	if err := s.Tasks.Forget(user(r), name); err != nil {
+		s.respond(w, r, nil, err)
+		return
+	}
 	s.Log.Info("claim released", "claim", name, "user", r.Header.Get(api.HeaderUserName))
 	w.WriteHeader(http.StatusNoContent)
 }

@@ -1,0 +1,6 @@
+ALTER TABLE attempts DROP CONSTRAINT attempts_task_id_fkey;
+ALTER TABLE attempts ADD FOREIGN KEY(task_id) REFERENCES tasks ON DELETE CASCADE;
+ALTER TABLE messages DROP CONSTRAINT messages_task_id_fkey;
+ALTER TABLE messages ADD FOREIGN KEY(task_id) REFERENCES tasks ON DELETE CASCADE;
+ALTER TABLE approvals DROP CONSTRAINT approvals_task_id_fkey;
+ALTER TABLE approvals ADD FOREIGN KEY(task_id) REFERENCES tasks ON DELETE CASCADE;

@@ -45,6 +45,9 @@ func (a *Automation) Run(ctx context.Context) {
 			}
 			if err == nil {
 				err = a.cleanup(tickCtx)
+				if err == nil {
+					err = a.cleanupInteractive(tickCtx)
+				}
 			}
 			if err != nil {
 				a.Log.Error("automation reconciliation failed", "err", err)
@@ -246,6 +249,50 @@ func (a *Automation) cleanup(ctx context.Context) error {
 			if _, err = a.Store.DB.Exec(ctx, `UPDATE tasks SET state=$2,finished_at=now() WHERE id=$1 AND state='uncertain'`, i.task, state); err != nil {
 				return err
 			}
+		}
+	}
+	return nil
+}
+
+// Interactive locks also outlive exec transports. Expired claims release their
+// locks only after the originally recorded pod has gone.
+func (a *Automation) cleanupInteractive(ctx context.Context) error {
+	rows, err := a.Store.DB.Query(ctx, `SELECT id,owner,claim,pod_name,pod_uid FROM interactive_tasks WHERE active AND pod_name<>'' LIMIT 100`)
+	if err != nil {
+		return err
+	}
+	type record struct{ id, owner, claim, pod, uid string }
+	var records []record
+	for rows.Next() {
+		var r record
+		if err = rows.Scan(&r.id, &r.owner, &r.claim, &r.pod, &r.uid); err != nil {
+			rows.Close()
+			return err
+		}
+		records = append(records, r)
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return err
+	}
+	for _, r := range records {
+		_, err = a.Tasks.Sandboxes.Get(ctx, r.owner, r.claim)
+		if err == nil {
+			continue
+		}
+		if !errors.Is(err, ErrNotFound) {
+			return err
+		}
+		pod, err := a.Tasks.Sandboxes.Kube.CoreV1().Pods(a.Tasks.Sandboxes.Namespace).Get(ctx, r.pod, metav1.GetOptions{})
+		if err != nil && !apierrors.IsNotFound(err) {
+			return err
+		}
+		if err == nil && string(pod.UID) == r.uid {
+			continue
+		}
+		if _, err = a.Store.DB.Exec(ctx, `UPDATE interactive_tasks SET active=false,released=true,updated_at=now() WHERE id=$1`, r.id); err != nil {
+			return err
 		}
 	}
 	return nil

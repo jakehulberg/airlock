@@ -152,7 +152,11 @@ func (s *Store) Reconcile(ctx context.Context) error {
  UPDATE attempts SET output='' WHERE finished_at<now()-interval '30 days' AND output<>'';
  UPDATE interactive_tasks SET data=jsonb_set(data,'{output}','""'::jsonb) WHERE NOT active AND updated_at<now()-interval '30 days' AND data->>'output'<>'';
  DELETE FROM activity WHERE created_at<now()-interval '90 days';
- DELETE FROM messages WHERE created_at<now()-interval '90 days' AND status='processed';`)
+ DELETE FROM messages WHERE created_at<now()-interval '90 days';
+ DELETE FROM interactive_tasks WHERE NOT active AND updated_at<now()-interval '365 days';
+ DELETE FROM tasks t WHERE t.state IN ('completed','failed','cancelled') AND t.finished_at<now()-interval '365 days' AND NOT EXISTS(SELECT 1 FROM attempts a WHERE a.task_id=t.id AND a.cleanup_pending) AND NOT EXISTS(SELECT 1 FROM dependencies d WHERE d.dependency_id=t.id) AND NOT EXISTS(SELECT 1 FROM tasks child WHERE child.parent_id=t.id);
+ DELETE FROM schedule_fires WHERE due_at<now()-interval '365 days';
+ DELETE FROM workflow_runs r WHERE r.finished_at<now()-interval '365 days' AND NOT EXISTS(SELECT 1 FROM tasks t WHERE t.run_id=r.id) AND NOT EXISTS(SELECT 1 FROM schedule_fires f WHERE f.run_id=r.id);`)
 		return err
 	})
 }

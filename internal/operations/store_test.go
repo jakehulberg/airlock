@@ -317,3 +317,133 @@ func TestAgentCredentialsAndDelegation(t *testing.T) {
 		t.Fatal("finished credential accepted")
 	}
 }
+
+func TestAssignmentInvalidatesApproval(t *testing.T) {
+	ctx := context.Background()
+	s := testStore(t)
+	a := seedAgent(t, s)
+	b := seedAgent(t, s)
+	task, err := s.CreateTask(ctx, "owner", Task{Title: "approval", Prompt: "approval", AgentID: a.ID, ApprovalRequired: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = s.Action(ctx, "owner", task.ID, "approve", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err = s.Assign(ctx, "owner", task.ID, b.ID, 5); err != nil {
+		t.Fatal(err)
+	}
+	var state string
+	var approved bool
+	if err = s.DB.QueryRow(ctx, `SELECT state,approved FROM tasks WHERE id=$1`, task.ID).Scan(&state, &approved); err != nil {
+		t.Fatal(err)
+	}
+	if state != "awaiting_approval" || approved {
+		t.Fatal("assignment retained approval")
+	}
+}
+func TestRetentionPreservesActiveDependencies(t *testing.T) {
+	ctx := context.Background()
+	s := testStore(t)
+	a := seedAgent(t, s)
+	parent := seedTask(t, s, a)
+	_, err := s.CreateTask(ctx, "owner", Task{Title: "child", Prompt: "child", AgentID: a.ID, Dependencies: []string{parent.ID}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.DB.Exec(ctx, `UPDATE tasks SET state='completed',finished_at=now()-interval '400 days' WHERE id=$1`, parent.ID)
+	if err = s.Reconcile(ctx); err != nil {
+		t.Fatal(err)
+	}
+	var n int
+	s.DB.QueryRow(ctx, `SELECT count(*) FROM tasks WHERE id=$1`, parent.ID).Scan(&n)
+	if n != 1 {
+		t.Fatal("required history removed")
+	}
+}
+func TestScheduleRunNowHonorsConcurrency(t *testing.T) {
+	ctx := context.Background()
+	s := testStore(t)
+	a := seedAgent(t, s)
+	w, err := s.SaveWorkflow(ctx, "owner", Workflow{Name: "workflow", Steps: []Step{{Key: "a", AgentID: a.ID, Prompt: "a"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sc, err := s.SaveSchedule(ctx, "owner", Schedule{Name: "daily", WorkflowID: w.ID, Cron: "0 8 * * *", Timezone: "UTC", Concurrency: "forbid", Missed: "once", Enabled: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.FireSchedule(ctx, "owner", sc.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.FireSchedule(ctx, "owner", sc.ID); err == nil {
+		t.Fatal("overlap allowed")
+	}
+	if err = s.SetScheduleEnabled(ctx, "other", sc.ID, false); err != ErrNotFound {
+		t.Fatal(err)
+	}
+	if err = s.SetScheduleEnabled(ctx, "owner", sc.ID, false); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestStaleAttemptCannotFinishRetry(t *testing.T) {
+	ctx := context.Background()
+	s := testStore(t)
+	a := seedAgent(t, s)
+	seedTask(t, s, a)
+	old, err := s.Claim(ctx, "same-process", 4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = s.Finish(ctx, old, 1, nil, false); err != nil {
+		t.Fatal(err)
+	}
+	s.DB.Exec(ctx, `UPDATE attempts SET cleanup_pending=false; UPDATE tasks SET available_at=now()`)
+	current, err := s.Claim(ctx, "same-process", 4)
+	if err != nil || current == nil {
+		t.Fatalf("%v %v", current, err)
+	}
+	if err = s.Finish(ctx, old, 0, nil, false); err == nil {
+		t.Fatal("stale attempt finalized retry")
+	}
+	var state string
+	s.DB.QueryRow(ctx, `SELECT state FROM tasks WHERE id=$1`, current.Task.ID).Scan(&state)
+	if state != "running" {
+		t.Fatal(state)
+	}
+}
+func TestMigrationRejectsChangedChecksum(t *testing.T) {
+	s := testStore(t)
+	ctx := context.Background()
+	if _, err := s.DB.Exec(ctx, `UPDATE airlock_migrations SET checksum='modified' WHERE version='001_initial.sql'`); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Migrate(ctx); err == nil || !strings.Contains(err.Error(), "checksum") {
+		t.Fatalf("%v", err)
+	}
+}
+func TestFailedDependencyPolicies(t *testing.T) {
+	ctx := context.Background()
+	s := testStore(t)
+	a := seedAgent(t, s)
+	parent := seedTask(t, s, a)
+	failed, err := s.CreateTask(ctx, "owner", Task{Title: "fail", Prompt: "fail", AgentID: a.ID, Dependencies: []string{parent.ID}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	blocked, err := s.CreateTask(ctx, "owner", Task{Title: "block", Prompt: "block", AgentID: a.ID, Dependencies: []string{parent.ID}, DependencyPolicy: "block"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.DB.Exec(ctx, `UPDATE tasks SET state='failed',finished_at=now() WHERE id=$1`, parent.ID)
+	if err = s.Reconcile(ctx); err != nil {
+		t.Fatal(err)
+	}
+	for id, want := range map[string]string{failed.ID: "failed", blocked.ID: "blocked"} {
+		var state string
+		if err = s.DB.QueryRow(ctx, `SELECT state FROM tasks WHERE id=$1`, id).Scan(&state); err != nil || state != want {
+			t.Fatalf("%s: %s %v", id, state, err)
+		}
+	}
+}

@@ -286,7 +286,7 @@ func (s *Store) Snapshot(ctx context.Context, owner string) (map[string]any, err
 		"agents":          `SELECT definition FROM agents WHERE owner=$1 ORDER BY updated_at DESC LIMIT 200`,
 		"workflows":       `SELECT definition FROM workflows WHERE owner=$1 ORDER BY updated_at DESC LIMIT 200`,
 		"tasks":           `SELECT to_jsonb(t)-'worker'-'prompt' AS data FROM tasks t WHERE owner=$1 ORDER BY created_at DESC LIMIT 500`,
-		"runs":            `SELECT to_jsonb(r) FROM workflow_runs r WHERE owner=$1 ORDER BY created_at DESC LIMIT 200`,
+		"runs":            `SELECT to_jsonb(r)-'definition'-'input' FROM workflow_runs r WHERE owner=$1 ORDER BY created_at DESC LIMIT 200`,
 		"schedules":       `SELECT definition || jsonb_build_object('next',next_run,'enabled',enabled) FROM schedules WHERE owner=$1 ORDER BY updated_at DESC LIMIT 200`,
 		"activity":        `SELECT to_jsonb(a) FROM activity a WHERE owner=$1 ORDER BY id DESC LIMIT 200`,
 		"approvals":       `SELECT to_jsonb(t)-'worker' FROM tasks t WHERE owner=$1 AND state='awaiting_approval' ORDER BY created_at LIMIT 200`,

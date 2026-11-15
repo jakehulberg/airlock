@@ -54,6 +54,16 @@ func (s *Store) SendMessage(ctx context.Context, p Principal, m Message) (Messag
 		m.CorrelationID = ID()
 	}
 	err := s.Transaction(ctx, func(tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx, `SELECT id FROM tasks WHERE id=$1 FOR UPDATE`, p.Task); err != nil {
+			return err
+		}
+		var count int
+		if err := tx.QueryRow(ctx, `SELECT count(*) FROM messages WHERE task_id=$1`, p.Task).Scan(&count); err != nil {
+			return err
+		}
+		if count >= 100 {
+			return fmt.Errorf("%w: message budget exhausted", ErrConflict)
+		}
 		var allowed bool
 		if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM tasks WHERE owner=$1 AND agent_id=$2 AND (run_id=NULLIF($3,'') OR parent_id=$4 OR id=(SELECT parent_id FROM tasks WHERE id=$4)))`, p.Owner, m.Recipient, p.Run, p.Task).Scan(&allowed); err != nil {
 			return err
