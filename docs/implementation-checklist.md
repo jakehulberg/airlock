@@ -13,7 +13,9 @@
 - [x] Documentation and operational recovery procedures
 - [ ] Full browser journey, responsive and accessibility verification (browser connection unavailable)
 - [ ] Live-cluster, Agent Vault, CNPG failover and backup/restore acceptance (not deployed)
-- [ ] Feature branch pushes and cross-linked pull requests
+- [x] Feature branch pushes and cross-linked draft pull requests
+  ([Airlock #16](https://github.com/jakehulberg/airlock/pull/16),
+  [homelab #33](https://github.com/jakehulberg/homelab/pull/33))
 
 See [verification evidence and acceptance requirements](verification.md). Unchecked verification is
 not represented as complete or production-tested.
