@@ -21,6 +21,7 @@ import (
 	"k8s.io/utils/exec"
 
 	"github.com/jakehulberg/airlock/internal/api"
+	"github.com/jakehulberg/airlock/internal/operations"
 )
 
 // Executor runs a command in a container and returns its exit code.
@@ -72,6 +73,7 @@ func (k *KubeExecutor) Exec(ctx context.Context, pod *corev1.Pod, container stri
 // Output is lost when the orchestrator restarts; the sandbox is the source of
 // truth for anything the agent produced.
 type Tasks struct {
+	Store     *operations.Store
 	Sandboxes *Sandboxes
 	Executor  Executor
 	Container string        // the agent container in the sandbox pod, unless the pool says otherwise
@@ -86,8 +88,9 @@ type Tasks struct {
 }
 
 type task struct {
-	owner string
-	limit int // bytes of output kept
+	owner   string
+	persist func() error
+	limit   int // bytes of output kept
 
 	mu        sync.Mutex
 	t         api.Task
@@ -112,6 +115,11 @@ func (t *task) Write(p []byte) (int, error) {
 	}
 	close(t.changed)
 	t.changed = make(chan struct{})
+	if t.persist != nil {
+		if err := t.persist(); err != nil {
+			return 0, err
+		}
+	}
 	return len(p), nil
 }
 
@@ -129,6 +137,12 @@ func (t *task) finish(code int, err error) {
 			t.t.Status = api.TaskSucceeded
 		} else {
 			t.t.Status = api.TaskFailed
+		}
+	}
+	if t.persist != nil {
+		if err := t.persist(); err != nil {
+			t.t.Status = api.TaskFailed
+			t.t.Error = "Execution result could not be persisted; outcome is uncertain"
 		}
 	}
 	close(t.changed)
@@ -189,6 +203,13 @@ func (s *Tasks) Start(ctx context.Context, user, claim, prompt string) (api.Task
 			Status:  api.TaskRunning,
 			Started: time.Now(),
 		},
+	}
+	if s.Store != nil {
+		if err := s.persistInteractive(t, true); err != nil {
+			s.mu.Unlock()
+			return api.Task{}, err
+		}
+		t.persist = func() error { return s.persistInteractive(t, false) }
 	}
 	s.tasks[t.t.ID] = t
 	s.prune()
@@ -329,6 +350,9 @@ func (s *Tasks) Follow(ctx context.Context, user, claim, id string, onOutput fun
 
 // Forget drops a claim's tasks, after the claim is released.
 func (s *Tasks) Forget(user, claim string) {
+	if s.Store != nil {
+		return
+	} // Durable history remains available after release.
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for id, t := range s.tasks {

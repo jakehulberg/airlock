@@ -10,11 +10,13 @@ import (
 	"strings"
 
 	"github.com/jakehulberg/airlock/internal/api"
+	"github.com/jakehulberg/airlock/internal/operations"
 )
 
 // Server is the orchestrator's HTTP API. It is only meant to be reached by the
 // web app, which authenticates users and passes their identity in headers.
 type Server struct {
+	Store     *operations.Store
 	Sandboxes *Sandboxes
 	Tasks     *Tasks
 	Token     string // shared with the web app
@@ -25,7 +27,13 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNoContent) })
 
+	mux.HandleFunc("GET /readyz", s.ready)
+	mux.HandleFunc("GET /metrics", s.metrics)
 	api := http.NewServeMux()
+	if s.Store != nil {
+		s.operationsRoutes(api)
+		mux.HandleFunc("/v1/agent/", s.agentAPI)
+	}
 	api.HandleFunc("GET /v1/pools", s.pools)
 	api.HandleFunc("GET /v1/claims", s.listClaims)
 	api.HandleFunc("POST /v1/claims", s.createClaim)

@@ -18,6 +18,7 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 
 	"github.com/jakehulberg/airlock/internal/env"
+	"github.com/jakehulberg/airlock/internal/operations"
 	"github.com/jakehulberg/airlock/internal/orchestrator"
 )
 
@@ -36,6 +37,7 @@ func main() {
 func run(log *slog.Logger) error {
 	var req env.Required
 	token := req.String("AIRLOCK_API_TOKEN")
+	databaseURL := req.String("AIRLOCK_DATABASE_URL")
 	if err := req.Err(); err != nil {
 		return err
 	}
@@ -82,14 +84,29 @@ func run(log *slog.Logger) error {
 		MaxOutput: 1 << 20,
 		MaxTasks:  500,
 	}
+	dbCtx, dbCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	store, err := operations.Open(dbCtx, databaseURL)
+	dbCancel()
+	if err != nil {
+		return err
+	}
+	defer store.DB.Close()
+	tasks.Store = store
+	if err := tasks.Restore(context.Background()); err != nil {
+		return err
+	}
 	srv := &http.Server{
 		Addr:              env.String("AIRLOCK_LISTEN", ":8081"),
-		Handler:           (&orchestrator.Server{Sandboxes: sandboxes, Tasks: tasks, Token: token, Log: log}).Handler(),
+		Handler:           (&orchestrator.Server{Store: store, Sandboxes: sandboxes, Tasks: tasks, Token: token, Log: log}).Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+	automation := &orchestrator.Automation{Store: store, Tasks: tasks, Log: log, Capacity: 4}
+	automationDone := make(chan struct{})
+	go func() { defer close(automationDone); automation.Run(ctx) }()
+	defer func() { stop(); <-automationDone }()
 	go func() {
 		<-ctx.Done()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
